@@ -8,7 +8,7 @@
     <string name="slot_mapping_logical_slot">逻辑卡槽 %d:</string>
     <string name="slot_mapping_port">卡槽 %1$d 端口 %2$d</string>
     <string name="slot_mapping_help">您的手机有 %1$d 个逻辑 SIM 卡槽和 %2$d 个物理 SIM 卡槽。%3$s\n\n选择您希望每个逻辑卡槽对应的物理卡槽 和/或 \"端口\"。请注意，并非所有映射模式都受硬件支持。</string>
-    <string name="slot_mapping_help_mep">\n\n物理卡槽 %1$d 支持多个启用的配置文件 (MEP)。要使用此功能，请将其 %2$d 个虚拟\"端口\"分配给上面显示的不同逻辑卡槽。\n\n启用 MEP 后，\"端口\"会在 OpenEUICC 中显示为共享 eSIM 配置文件的独立的 eSIM 卡槽。</string>
+    <string name="slot_mapping_help_mep">\n\n物理卡槽 %1$d 支持多个启用的配置文件 (MEP)。要使用此功能，请将其 %2$d 个虚拟\"端口\"分配给上面显示的不同逻辑卡槽。\n\n启用 MEP 后，\"端口\"会在 eSIM Manager 中显示为共享 eSIM 配置文件的独立的 eSIM 卡槽。</string>
     <string name="slot_mapping_help_dsds">\n支持双卡模式，但已禁用。如果您的设备带有内置 eSIM 芯片，则默认情况下可能不会启用。更改上面的映射或启用双卡以访问您的 eSIM。</string>
     <string name="slot_mapping_completed">您的新卡槽映射已设置完毕。请等待基带刷新卡槽。</string>
     <string name="slot_mapping_failure">指定的映射可能无效或硬件不支持您指定的映射。</string>
