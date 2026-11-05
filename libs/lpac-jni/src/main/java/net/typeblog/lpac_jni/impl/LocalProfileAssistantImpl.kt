@@ -88,6 +88,13 @@ class LocalProfileAssistantImpl(
     private var finalized = false
     private var contextHandle: Long = LpacJni.createContext(isdrAid, apduInterface, httpInterface)
 
+    // close() frees the native context, so a caller that was waiting on the lock
+    // while another thread closed this LPA must not touch contextHandle afterwards
+    private inline fun <T> withLiveContext(block: () -> T): T = lock.withLock {
+        check(!finalized) { "LocalProfileAssistant has been closed" }
+        block()
+    }
+
     init {
         if (LpacJni.euiccInit(contextHandle) < 0) {
             throw IllegalArgumentException("Failed to initialize LPA")
@@ -97,7 +104,7 @@ class LocalProfileAssistantImpl(
         httpInterface.usePublicKeyIds(pkids.toTypedArray())
     }
 
-    override fun setEs10xMss(mss: Byte) {
+    override fun setEs10xMss(mss: Byte) = withLiveContext {
         LpacJni.euiccSetMss(contextHandle, mss)
     }
 
@@ -113,8 +120,17 @@ class LocalProfileAssistantImpl(
         }
 
     override val profiles: List<LocalProfileInfo>
-        get() = lock.withLock {
+        get() = withLiveContext {
+            apduInterface.lastApduException = null
             val head = LpacJni.es10cGetProfilesInfo(contextHandle)
+            // A NULL list means either "no profiles" or "the card could not be read".
+            // Don't report a failed read as an empty card: telephony would mark every
+            // existing embedded subscription as non-embedded and hide it from Settings.
+            if (head == 0L) {
+                apduInterface.lastApduException?.let {
+                    throw IllegalStateException("Failed to read profiles from eUICC", it)
+                }
+            }
             var curr = head
             val ret = mutableListOf<LocalProfileInfo>()
             while (curr != 0L) {
@@ -139,7 +155,7 @@ class LocalProfileAssistantImpl(
         }
 
     override val notifications: List<LocalProfileNotification>
-        get() = lock.withLock {
+        get() = withLiveContext {
             val head = LpacJni.es10bListNotification(contextHandle)
             var curr = head
 
@@ -167,10 +183,10 @@ class LocalProfileAssistantImpl(
         }
 
     override val eID: String
-        get() = lock.withLock { LpacJni.es10cGetEid(contextHandle)!! }
+        get() = withLiveContext { LpacJni.es10cGetEid(contextHandle)!! }
 
     override val euiccInfo2: EuiccInfo2?
-        get() = lock.withLock {
+        get() = withLiveContext {
             val cInfo = LpacJni.es10cexGetEuiccInfo2(contextHandle)
             if (cInfo == 0L) return null
 
@@ -204,19 +220,19 @@ class LocalProfileAssistantImpl(
             }
         }
 
-    override fun enableProfile(iccid: String, refresh: Boolean): Boolean = lock.withLock {
+    override fun enableProfile(iccid: String, refresh: Boolean): Boolean = withLiveContext {
         LpacJni.es10cEnableProfile(contextHandle, iccid, refresh) == 0
     }
 
-    override fun disableProfile(iccid: String, refresh: Boolean): Boolean = lock.withLock {
+    override fun disableProfile(iccid: String, refresh: Boolean): Boolean = withLiveContext {
         LpacJni.es10cDisableProfile(contextHandle, iccid, refresh) == 0
     }
 
-    override fun deleteProfile(iccid: String): Boolean = lock.withLock {
+    override fun deleteProfile(iccid: String): Boolean = withLiveContext {
         LpacJni.es10cDeleteProfile(contextHandle, iccid) == 0
     }
 
-    override fun downloadProfile(input: ProfileDownloadInput, callback: ProfileDownloadCallback) = lock.withLock {
+    override fun downloadProfile(input: ProfileDownloadInput, callback: ProfileDownloadCallback) = withLiveContext {
         val res = LpacJni.downloadProfile(
             contextHandle,
             input.address,
@@ -243,17 +259,17 @@ class LocalProfileAssistantImpl(
         }
     }
 
-    override fun deleteNotification(seqNumber: Long): Boolean = lock.withLock {
+    override fun deleteNotification(seqNumber: Long): Boolean = withLiveContext {
         LpacJni.es10bDeleteNotification(contextHandle, seqNumber) == 0
     }
 
-    override fun handleNotification(seqNumber: Long): Boolean = lock.withLock {
+    override fun handleNotification(seqNumber: Long): Boolean = withLiveContext {
         LpacJni.handleNotification(contextHandle, seqNumber).also {
             Log.d(TAG, "handleNotification $seqNumber = $it")
         } == 0
     }
 
-    override fun setNickname(iccid: String, nickname: String) = lock.withLock {
+    override fun setNickname(iccid: String, nickname: String) = withLiveContext {
         val encoded = try {
             Charsets.UTF_8.encode(nickname).array()
         } catch (e: CharacterCodingException) {
@@ -272,7 +288,7 @@ class LocalProfileAssistantImpl(
     }
 
     override fun euiccMemoryReset() {
-        lock.withLock {
+        withLiveContext {
             LpacJni.es10cEuiccMemoryReset(contextHandle)
         }
     }

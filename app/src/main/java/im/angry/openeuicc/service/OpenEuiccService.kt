@@ -192,38 +192,40 @@ class OpenEuiccService : EuiccService(), OpenEuiccContextMarker {
             }
 
             return@withEuiccChannelManager try {
-                euiccChannelManager.withEuiccChannel(slotId, port, seId) { channel ->
-                    val filteredProfiles =
-                        if (preferenceRepository.unfilteredProfileListFlow.first())
-                            channel.lpa.profiles
-                        else
-                            channel.lpa.profiles.operational
-                    val profiles = filteredProfiles.map {
-                        EuiccProfileInfo.Builder(it.iccid).apply {
-                            setProfileName(it.name)
-                            setNickname(it.displayName)
-                            setServiceProviderName(it.providerName)
-                            setState(
-                                when (it.state) {
-                                    LocalProfileInfo.State.Enabled -> EuiccProfileInfo.PROFILE_STATE_ENABLED
-                                    LocalProfileInfo.State.Disabled -> EuiccProfileInfo.PROFILE_STATE_DISABLED
-                                }
-                            )
-                            setProfileClass(
-                                when (it.profileClass) {
-                                    ProfileClass.Testing -> EuiccProfileInfo.PROFILE_CLASS_TESTING
-                                    ProfileClass.Provisioning -> EuiccProfileInfo.PROFILE_CLASS_PROVISIONING
-                                    ProfileClass.Operational -> EuiccProfileInfo.PROFILE_CLASS_OPERATIONAL
-                                }
-                            )
-                        }.build()
-                    }
+                retryOnClosedChannel {
+                    euiccChannelManager.withEuiccChannel(slotId, port, seId) { channel ->
+                        val filteredProfiles =
+                            if (preferenceRepository.unfilteredProfileListFlow.first())
+                                channel.lpa.profiles
+                            else
+                                channel.lpa.profiles.operational
+                        val profiles = filteredProfiles.map {
+                            EuiccProfileInfo.Builder(it.iccid).apply {
+                                setProfileName(it.name)
+                                setNickname(it.displayName)
+                                setServiceProviderName(it.providerName)
+                                setState(
+                                    when (it.state) {
+                                        LocalProfileInfo.State.Enabled -> EuiccProfileInfo.PROFILE_STATE_ENABLED
+                                        LocalProfileInfo.State.Disabled -> EuiccProfileInfo.PROFILE_STATE_DISABLED
+                                    }
+                                )
+                                setProfileClass(
+                                    when (it.profileClass) {
+                                        ProfileClass.Testing -> EuiccProfileInfo.PROFILE_CLASS_TESTING
+                                        ProfileClass.Provisioning -> EuiccProfileInfo.PROFILE_CLASS_PROVISIONING
+                                        ProfileClass.Operational -> EuiccProfileInfo.PROFILE_CLASS_OPERATIONAL
+                                    }
+                                )
+                            }.build()
+                        }
 
-                    GetEuiccProfileInfoListResult(
-                        RESULT_OK,
-                        profiles.toTypedArray(),
-                        channel.port.card.isRemovable
-                    )
+                        GetEuiccProfileInfoListResult(
+                            RESULT_OK,
+                            profiles.toTypedArray(),
+                            channel.port.card.isRemovable
+                        )
+                    }
                 }
             } catch (_: EuiccChannelManager.EuiccChannelNotFoundException) {
                 GetEuiccProfileInfoListResult(
@@ -231,7 +233,29 @@ class OpenEuiccService : EuiccService(), OpenEuiccContextMarker {
                     arrayOf(),
                     true
                 )
+            } catch (e: IllegalStateException) {
+                // Report a failure rather than crashing: telephony keeps its existing
+                // embedded subscriptions on a failed result
+                Log.e(TAG, "Unable to read profiles on slot $slotId", e)
+                GetEuiccProfileInfoListResult(
+                    RESULT_FIRST_USER,
+                    arrayOf(),
+                    true
+                )
             }
+        }
+
+    /**
+     * The channel can be closed from under a running operation while the card refreshes,
+     * e.g. right after a profile has been enabled. One more attempt reopens it.
+     */
+    private suspend fun <T> retryOnClosedChannel(fn: suspend () -> T): T =
+        try {
+            fn()
+        } catch (e: IllegalStateException) {
+            Log.w(TAG, "eUICC channel closed mid-operation, retrying", e)
+            delay(1000)
+            fn()
         }
 
     override fun onGetEuiccInfo(slotId: Int): EuiccInfo {
